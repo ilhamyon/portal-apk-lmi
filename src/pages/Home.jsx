@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { deauthUser, isAuthenticated } from "../utils/auth";
-import { Button, Dropdown, Form, Input, Menu, message } from "antd";
+import { Button, Dropdown, Form, Input, Menu, message, Select } from "antd";
 // import { sanityClient } from "../lib/sanity/getClient";
 // import { InboxOutlined } from '@ant-design/icons';
 import axios from "axios";
@@ -33,6 +33,8 @@ const UpdateMapCenter = ({ position }) => {
 
   return null;
 };
+
+const { Option } = Select;
 
 function Home() {
   const navigate = useNavigate();
@@ -100,6 +102,11 @@ function Home() {
               create: {
                 _type: 'data-pemasangan-apk',
                 lokasiPemasangan: values.lokasiPemasangan,
+                province: values.province,
+                regency: values.regency,
+                district: values.district,
+                village: values.village,
+                reverensiTim: values.reverensiTim,
                 namaPenjaga: values.namaPenjaga,
                 fotoEksternal: imageUrl,
                 geometry: geometry,
@@ -150,6 +157,79 @@ function Home() {
     } else {
       alert('Geolocation is not supported by this browser.');
     }
+  };
+
+  const [provinces, setProvinces] = useState([]);
+  const [regencies, setRegencies] = useState([]);
+  const [districts, setDistricts] = useState([]);
+  const [villages, setVillages] = useState([]);
+
+  const [selectedProvince, setSelectedProvince] = useState(null);
+  const [selectedRegency, setSelectedRegency] = useState(null);
+  const [selectedDistrict, setSelectedDistrict] = useState(null);
+
+  useEffect(() => {
+    // Fetch provinces and filter for Nusa Tenggara Barat (ID = 17)
+    axios.get('https://www.emsifa.com/api-wilayah-indonesia/api/provinces.json')
+      .then(response => {
+        const ntbProvince = response.data.find(province => province.id === '52');
+        if (ntbProvince) {
+          setProvinces([ntbProvince]);
+        } else {
+          message.error('Provinsi Nusa Tenggara Barat tidak ditemukan.');
+        }
+      })
+      .catch(error => {
+        console.error('Error fetching provinces:', error);
+        message.error('Gagal memuat provinsi');
+      });
+  }, []);
+
+  const handleProvinceChange = (value) => {
+    setSelectedProvince(value);
+    setSelectedRegency(null);
+    setSelectedDistrict(null);
+    setVillages([]);
+
+    // Fetch regencies for the selected province
+    axios.get(`https://www.emsifa.com/api-wilayah-indonesia/api/regencies/${value}.json`)
+      .then(response => {
+        setRegencies(response.data);
+      })
+      .catch(error => {
+        console.error('Error fetching regencies:', error);
+        message.error('Gagal memuat kabupaten/kota');
+      });
+  };
+
+  const handleRegencyChange = (value) => {
+    setSelectedRegency(value);
+    setSelectedDistrict(null);
+    setVillages([]);
+
+    // Fetch districts for the selected regency
+    axios.get(`https://www.emsifa.com/api-wilayah-indonesia/api/districts/${value}.json`)
+      .then(response => {
+        setDistricts(response.data);
+      })
+      .catch(error => {
+        console.error('Error fetching districts:', error);
+        message.error('Gagal memuat kecamatan');
+      });
+  };
+
+  const handleDistrictChange = (value) => {
+    setSelectedDistrict(value);
+
+    // Fetch villages for the selected district
+    axios.get(`https://www.emsifa.com/api-wilayah-indonesia/api/villages/${value}.json`)
+      .then(response => {
+        setVillages(response.data);
+      })
+      .catch(error => {
+        console.error('Error fetching villages:', error);
+        message.error('Gagal memuat desa/kelurahan');
+      });
   };
 
   const handleSave = () => {
@@ -248,6 +328,73 @@ function Home() {
             </Form.Item>
 
             <Form.Item
+              label="Provinsi"
+              name="province"
+              rules={[{ required: true, message: 'Provinsi harus dipilih' }]}
+            >
+              <Select onChange={handleProvinceChange} placeholder="Pilih Provinsi">
+                {provinces.map(province => (
+                  <Option key={province.id} value={province.id}>
+                    {province.name}
+                  </Option>
+                ))}
+              </Select>
+            </Form.Item>
+
+            <Form.Item
+              label="Kabupaten/Kota"
+              name="regency"
+              rules={[{ required: true, message: 'Kabupaten/Kota harus dipilih' }]}
+            >
+              <Select
+                onChange={handleRegencyChange}
+                placeholder="Pilih Kabupaten/Kota"
+                disabled={!selectedProvince}
+              >
+                {regencies.map(regency => (
+                  <Option key={regency.id} value={regency.id}>
+                    {regency.name}
+                  </Option>
+                ))}
+              </Select>
+            </Form.Item>
+
+            <Form.Item
+              label="Kecamatan"
+              name="district"
+              rules={[{ required: true, message: 'Kecamatan harus dipilih' }]}
+            >
+              <Select
+                onChange={handleDistrictChange}
+                placeholder="Pilih Kecamatan"
+                disabled={!selectedRegency}
+              >
+                {districts.map(district => (
+                  <Option key={district.id} value={district.id}>
+                    {district.name}
+                  </Option>
+                ))}
+              </Select>
+            </Form.Item>
+
+            <Form.Item
+              label="Desa/Kelurahan"
+              name="village"
+              rules={[{ required: true, message: 'Desa/Kelurahan harus dipilih' }]}
+            >
+              <Select
+                placeholder="Pilih Desa/Kelurahan"
+                disabled={!selectedDistrict}
+              >
+                {villages.map(village => (
+                  <Option key={village.id} value={village.id}>
+                    {village.name}
+                  </Option>
+                ))}
+              </Select>
+            </Form.Item>
+
+            <Form.Item
               label="Input Kordinat (Klik Gunakan Lokasi Saat Ini atau Anda Juga Bisa Menentukan Titik Sendiri di Map)"
               name="position"
             >
@@ -293,6 +440,16 @@ function Home() {
               rules={[{ required: true, message: 'Nama penjaga APK harus diisi' }]}
             >
               <Input />
+            </Form.Item>
+
+            <Form.Item
+              label="Reverensi/TIM"
+              name="reverensiTim"
+              rules={[{ required: true, message: 'Reverensi/TIM harus diisi' }]}
+            >
+              <div className="flex gap-2">
+                <Input />
+              </div>
             </Form.Item>
 
             <Form.Item
