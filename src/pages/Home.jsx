@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { deauthUser, isAuthenticated } from "../utils/auth";
 import { Button, Dropdown, Form, Input, Menu, message, Select } from "antd";
+import imageIqbalIndahCenter from "../assets/igbalindah-center.jpg"
 // import { sanityClient } from "../lib/sanity/getClient";
 // import { InboxOutlined } from '@ant-design/icons';
 import axios from "axios";
@@ -268,7 +269,7 @@ function Home() {
         <div className="relative mx-auto max-w-screen-xl px-4 py-32 sm:px-6 lg:flex lg:h-screen lg:items-center lg:px-8">
           <div className="max-w-xl text-center sm:text-left">
             <div className="flex justify-center items-center mb-6">
-              <img width={200} src="https://berundang.com/wp-content/uploads/2024/06/logo-laskar-relawan.png" />
+              <img width={200} src={imageIqbalIndahCenter} />
             </div>
             <h1 className="text-3xl font-extrabold sm:text-5xl text-gray-800">
               Selamat datang di
