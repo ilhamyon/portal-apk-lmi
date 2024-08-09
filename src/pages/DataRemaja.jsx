@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { deauthUser, isAuthenticated } from "../utils/auth";
-import { Dropdown, Menu, Table, message } from "antd";
+import { Button, Dropdown, Menu, Table, message } from "antd";
 import { sanityClient } from "../lib/sanity/getClient";
+import * as XLSX from 'xlsx';
 
 const columns = [
   {
@@ -15,6 +16,11 @@ const columns = [
     title: 'Lokasi Pemasangan',
     dataIndex: 'lokasiPemasangan',
     key: 'lokasiPemasangan',
+    render: (item, record) => (
+      <div>
+        {record.lokasiPemasangan}, {record.village}, {record.district}, {record.regency}
+      </div>
+    )
   },
   {
     title: 'Nama Penjaga APK',
@@ -66,7 +72,7 @@ function Home() {
       try {
         setIsLoading(true);
         const sanityData = await sanityClient.fetch(`*[_type == 'data-pemasangan-apk']{
-          _id, lokasiPemasangan, namaPenjaga, fotoEksternal, "foto": foto.asset->url, geometry, user-> {name}
+          _id, lokasiPemasangan, province, regency, district, village, namaPenjaga, fotoEksternal, "foto": foto.asset->url, geometry, user-> {name}
         }`);
 
         setServerData({
@@ -89,23 +95,134 @@ function Home() {
   }, []);
   console.log('cek data pemasangan: ', serverData)
 
-  let dataSource = [];
-  if (serverData && serverData.data && serverData.data.length > 0) {
-    dataSource = serverData.data
-    .filter(item => item.user.name === relawanApk_user)
-    .map((item) => ({
-      key: item._id,
-      name: item.user.name || "-",
-      lokasiPemasangan: item.lokasiPemasangan || "-",
-      namaPenjaga: item.namaPenjaga || "-",
-      foto: item.fotoEksternal || "-",
-    }));
-  }  
+  const [dataSource, setDataSource] = useState([]);
+  const [geographyData, setGeographyData] = useState({
+    provinces: [],
+    regencies: [],
+    districts: [],
+    villages: []
+  });
 
-  const updatedColumns = columns.map((col) => ({
-    ...col,
-    width: col.width || 150, // Anda dapat menyesuaikan lebar default kolom
-  }));
+  useEffect(() => {
+    const initializeMap = async () => {
+      const data = serverData && serverData.data && serverData.data.length > 0
+        ? serverData.data.filter(item => item.user.name === relawanApk_user)
+        : [];
+
+      if (data.length === 0) {
+        console.error('No data found');
+        return;
+      }
+
+      // Extract IDs from the fetched data
+      const ids = data.map(item => ({
+        province: item.province,
+        regency: item.regency,
+        district: item.district,
+        village: item.village
+      }));
+
+      // Fetch dynamic geography data based on IDs
+      const { provinces, regencies, districts, villages } = await fetchGeographyData(ids);
+      setGeographyData({ provinces, regencies, districts, villages });
+
+      // Map the data to include location names
+      const updatedDataSource = data.map((item) => ({
+        key: item._id,
+        name: item.user.name || "-",
+        lokasiPemasangan: item.lokasiPemasangan || "-",
+        namaPenjaga: item.namaPenjaga || "-",
+        foto: item.fotoEksternal || "-",
+        village: getNameById(item.village, villages),
+        district: getNameById(item.district, districts),
+        regency: getNameById(item.regency, regencies),
+        province: getNameById(item.province, provinces)
+      }));
+
+      setDataSource(updatedDataSource);
+    };
+
+    initializeMap();
+  }, [serverData, relawanApk_user]);
+
+  // Function to fetch geography data based on IDs
+  async function fetchGeographyData(ids) {
+    try {
+      // Fetch provinces
+      const provincesResponse = await fetch('https://www.emsifa.com/api-wilayah-indonesia/api/provinces.json');
+      const provinces = await provincesResponse.json();
+
+      // Extract unique province IDs from the provided list
+      const provinceIds = [...new Set(ids.map(item => item.province))];
+
+      // Fetch regencies for unique province IDs
+      const regenciesResponses = await Promise.all(provinceIds.map(id =>
+        fetch(`https://www.emsifa.com/api-wilayah-indonesia/api/regencies/${id}.json`)
+      ));
+      const regenciesData = await Promise.all(regenciesResponses.map(res => res.json()));
+      const regencies = regenciesData.flat();
+
+      // Extract unique regency IDs from the list
+      const regencyIds = [...new Set(ids.map(item => item.regency))];
+
+      // Fetch districts for unique regency IDs
+      const districtsResponses = await Promise.all(regencyIds.map(id =>
+        fetch(`https://www.emsifa.com/api-wilayah-indonesia/api/districts/${id}.json`)
+      ));
+      const districtsData = await Promise.all(districtsResponses.map(res => res.json()));
+      const districts = districtsData.flat();
+
+      // Extract unique district IDs from the list
+      const districtIds = [...new Set(ids.map(item => item.district))];
+
+      // Fetch villages for unique district IDs
+      const villagesResponses = await Promise.all(districtIds.map(id =>
+        fetch(`https://www.emsifa.com/api-wilayah-indonesia/api/villages/${id}.json`)
+      ));
+      const villagesData = await Promise.all(villagesResponses.map(res => res.json()));
+      const villages = villagesData.flat();
+
+      return { provinces, regencies, districts, villages };
+    } catch (error) {
+      console.error('Error fetching geography data:', error);
+      return { provinces: [], regencies: [], districts: [], villages: [] };
+    }
+  }
+
+  // Function to get name by ID from provided list
+  function getNameById(id, list) {
+    const item = list.find(item => item.id === id);
+    return item ? item.name : 'Not Found';
+  }
+
+  const rearrangeDataForExcel = () => {
+    // Rearrange the data based on the column order
+    const rearrangedData = dataSource.map((item, index) => {
+      return {
+        'No.': index + 1,
+        'Nama Relawan': item.name,
+        'Lokasi Pemasangan': `${item.lokasiPemasangan}, ${item.village}, ${item.district}, ${item.regency}, ${item.province}`,
+        'Nama Penjaga APK': item.namaPenjaga,
+        'Foto': item.foto
+      };
+    });
+  
+    return rearrangedData;
+  };  
+
+  const downloadExcel = () => {
+    const data = rearrangeDataForExcel(serverData.data);
+    const volunteerName = data[0]?.['Nama Relawan'];
+    const worksheet = XLSX.utils.json_to_sheet(data);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Sheet1');
+    XLSX.writeFile(workbook, `Data-Pemasangan-APK-${volunteerName}.xlsx`);
+  };
+
+  // const updatedColumns = columns.map((col) => ({
+  //   ...col,
+  //   width: col.width || 150,
+  // }));
   return (
     <>
       <section id="hero" className="relative bg-[url(https://ik.imagekit.io/tvlk/blog/2021/03/Mandalika.jpg)] bg-cover bg-center bg-no-repeat">
@@ -123,7 +240,7 @@ function Home() {
         <div className="relative mx-auto max-w-screen-xl px-4 py-32 sm:px-6 lg:flex lg:h-screen lg:items-center lg:px-8">
           <div className="max-w-xl text-center sm:text-left">
             <h1 className="text-3xl font-extrabold sm:text-5xl text-gray-800">
-              Data Kunjungan
+              Data Pemasangan APK
             </h1>
 
             <p className="mt-4 max-w-lg sm:text-xl/relaxed text-gray-700">
@@ -143,6 +260,9 @@ function Home() {
       </section>
 
       <section id="list" className="text-gray-600 py-10 lg:px-36">
+        <div className="flex justify-end mb-4 mr-2">
+            <Button className="bg-green-600 text-white" onClick={downloadExcel}>Download Excel</Button>
+        </div>
         <Table className='font-normal' columns={columns} dataSource={dataSource} loading={isLoading} scroll={{ x: 'max-content' }}/>
 
         {/* <div className="text-center mt-10">
