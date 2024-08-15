@@ -149,6 +149,7 @@ function Home() {
         (position) => {
           const { latitude, longitude } = position.coords;
           setPosition({ lat: latitude, lng: longitude });
+          setGeometry({ lat: latitude, lng: longitude });
           message.success('Berhasil menyimpan titik lokasi');
         },
         (error) => {
